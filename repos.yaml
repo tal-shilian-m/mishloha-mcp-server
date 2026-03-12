@@ -1,0 +1,21 @@
+# repos.yaml — רשימת repositories לסריקה
+# הוסף כאן לינקים ל-repos שאתה רוצה ש-Claude יכיר
+# המערכת תסרוק כל repo ותבנה תיאור מעמיק אוטומטית
+#
+# פורמט:
+#   - url: לינק ל-GitLab repo
+#     name: שם ידידותי (בעברית)
+#     description: תיאור קצר (אופציונלי)
+#
+# דוגמה:
+#   - url: https://gitlab.com/mishloha/backend
+#     name: שרת ראשי
+#     description: API ראשי של משלוחה
+#
+# אחרי שתוסיף repos, הרץ: POST /api/index/rebuild
+# המערכת תסרוק, תבנה תיאורים, ותשמור ב-repo_index.json
+
+repos: []
+  # - url: https://gitlab.com/mishloha/REPO_NAME
+  #   name: שם הפרויקט
+  #   description: תיאור קצר

@@ -1,5 +1,6 @@
 """Main MCP Server for Mishloha development tools"""
 import os
+import json
 import asyncio
 import logging
 from typing import List
@@ -15,6 +16,7 @@ from mcp.types import Resource, TextResourceContents, Tool
 from .tools.gitlab_tools import register_gitlab_tools
 from .tools.jira_tools import register_jira_tools
 from .tools.figma_tools import register_figma_tools
+from .tools.repo_indexer import RepoIndexer
 
 # Load environment variables
 load_dotenv()
@@ -290,7 +292,74 @@ class MishlohaServer:
                 )
             ])
             
+            # Repo Index tools
+            tools.extend([
+                Tool(
+                    name="repo_index_rebuild",
+                    description="סריקת כל ה-repositories מ-repos.yaml ובניית אינדקס מעמיק. הרץ אחרי הוספת repos חדשים",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                ),
+                Tool(
+                    name="repo_index_lookup",
+                    description="חיפוש repository לפי שם או תיאור — מחזיר מידע מעמיק על הrepo (מבנה, שפות, commits, README)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "שם או מילת חיפוש"}
+                        },
+                        "required": ["query"]
+                    }
+                ),
+                Tool(
+                    name="repo_index_list",
+                    description="רשימת כל ה-repositories המוכרים עם תיאור מעמיק של כל אחד",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                )
+            ])
+            
             return tools
+        
+        # Register repo index tools
+        indexer = RepoIndexer()
+        
+        @self.server.call_tool()
+        async def repo_index_rebuild() -> list:
+            """סריקת כל ה-repos ובניית אינדקס"""
+            from mcp.types import TextContent
+            result = await indexer.rebuild_index()
+            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
+        
+        @self.server.call_tool()
+        async def repo_index_lookup(query: str) -> list:
+            """חיפוש repo לפי שם או תיאור"""
+            from mcp.types import TextContent
+            index = indexer.load_index()
+            query_lower = query.lower()
+            results = []
+            for url, info in index.get("repos", {}).items():
+                name = info.get("name", "").lower()
+                desc = (info.get("user_description", "") + " " + info.get("gitlab_description", "")).lower()
+                readme = info.get("readme_summary", "").lower()
+                if query_lower in name or query_lower in desc or query_lower in readme or query_lower in url.lower():
+                    results.append(info)
+            if not results:
+                return [TextContent(type="text", text=f"לא נמצא repo שתואם '{query}'. הרץ repo_index_list לראות את כל ה-repos המוכרים.")]
+            return [TextContent(type="text", text=json.dumps(results, indent=2, ensure_ascii=False))]
+        
+        @self.server.call_tool()
+        async def repo_index_list() -> list:
+            """רשימת כל ה-repos עם תיאור מעמיק"""
+            from mcp.types import TextContent
+            summary = indexer.get_index_summary()
+            return [TextContent(type="text", text=summary)]
         
         # Register tool implementations
         try:
