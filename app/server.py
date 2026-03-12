@@ -17,6 +17,8 @@ from .tools.gitlab_tools import register_gitlab_tools
 from .tools.jira_tools import register_jira_tools
 from .tools.figma_tools import register_figma_tools
 from .tools.repo_indexer import RepoIndexer
+from .tools.repo_sync import RepoSync, REPOS_DIR
+from .tools.code_map import generate_code_map, generate_all_code_maps, search_code
 
 # Load environment variables
 load_dotenv()
@@ -292,6 +294,65 @@ class MishlohaServer:
                 )
             ])
             
+            # Code tools (local repos)
+            tools.extend([
+                Tool(
+                    name="code_sync_repos",
+                    description="סנכרון כל ה-repositories מ-repos.yaml — clone או pull. הרץ פעם ביום או אחרי הוספת repos חדשים",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                ),
+                Tool(
+                    name="code_get_map",
+                    description="מפת הקוד המלאה — כל הקבצים בכל ה-repos עם תיאור: classes, functions, exports. השתמש בזה ראשון כדי להבין מה יש בקוד",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "repo": {"type": "string", "description": "שם ה-repo (אופציונלי — בלי זה מחזיר הכל)"}
+                        },
+                        "required": []
+                    }
+                ),
+                Tool(
+                    name="code_search",
+                    description="חיפוש טקסט חופשי בכל הקוד — מוצא קבצים ושורות שמכילים את מונח החיפוש",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "מונח חיפוש (שם פונקציה, class, טקסט)"},
+                            "repo": {"type": "string", "description": "סינון ל-repo ספציפי (אופציונלי)"}
+                        },
+                        "required": ["query"]
+                    }
+                ),
+                Tool(
+                    name="code_read_file",
+                    description="קריאת קובץ מלא מה-repo המקומי. השתמש אחרי code_get_map או code_search כדי לצלול לקובץ ספציפי",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "repo": {"type": "string", "description": "שם ה-repo"},
+                            "file_path": {"type": "string", "description": "נתיב הקובץ בתוך ה-repo"},
+                            "start_line": {"type": "integer", "description": "שורה התחלה (אופציונלי)"},
+                            "end_line": {"type": "integer", "description": "שורה סיום (אופציונלי)"}
+                        },
+                        "required": ["repo", "file_path"]
+                    }
+                ),
+                Tool(
+                    name="code_list_repos",
+                    description="רשימת כל ה-repos המסונכרנים עם סטטוס",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                ),
+            ])
+            
             # Repo Index tools
             tools.extend([
                 Tool(
@@ -326,6 +387,121 @@ class MishlohaServer:
             ])
             
             return tools
+        
+        # Register code tools
+        repo_sync = RepoSync()
+        
+        @self.server.call_tool()
+        async def code_sync_repos() -> list:
+            """סנכרון repos"""
+            from mcp.types import TextContent
+            result = repo_sync.sync_all()
+            # After sync, regenerate code maps
+            if result.get("synced", 0) > 0:
+                generate_all_code_maps()
+            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
+        
+        @self.server.call_tool()
+        async def code_get_map(repo: str = None) -> list:
+            """מפת הקוד"""
+            from mcp.types import TextContent
+            from pathlib import Path as P
+            
+            map_file = REPOS_DIR / ".code_maps.json"
+            if not map_file.exists():
+                # Generate on first request
+                maps = generate_all_code_maps()
+            else:
+                with open(map_file, "r", encoding="utf-8") as f:
+                    maps = json.load(f)
+            
+            if repo:
+                # Filter to specific repo
+                filtered = {k: v for k, v in maps.items() if repo.lower() in k.lower()}
+                if not filtered:
+                    return [TextContent(type="text", text=f"לא נמצא repo שתואם '{repo}'. repos קיימים: {', '.join(maps.keys())}")]
+                maps = filtered
+            
+            # Format for Claude
+            output = []
+            for repo_name, code_map in maps.items():
+                output.append(f"## 📁 {repo_name}")
+                output.append(f"קבצים: {code_map.get('total_files', 0)} | שורות: {code_map.get('total_lines', 0)}")
+                output.append("")
+                for file_path, info in code_map.get("files", {}).items():
+                    line = f"  {file_path}"
+                    if info.get("summary"):
+                        line += f" — {info['summary']}"
+                    if info.get("classes"):
+                        line += f" | classes: {', '.join(info['classes'])}"
+                    if info.get("functions"):
+                        line += f" | functions: {', '.join(info['functions'][:8])}"
+                    if info.get("exports"):
+                        line += f" | exports: {', '.join(info['exports'][:8])}"
+                    output.append(line)
+                output.append("")
+            
+            return [TextContent(type="text", text="\n".join(output))]
+        
+        @self.server.call_tool()
+        async def code_search(query: str, repo: str = None) -> list:
+            """חיפוש בקוד"""
+            from mcp.types import TextContent
+            results = search_code(query, repo)
+            if not results:
+                return [TextContent(type="text", text=f"לא נמצאו תוצאות ל-'{query}'")]
+            
+            output = [f"נמצאו {len(results)} קבצים עם '{query}':\n"]
+            for r in results:
+                output.append(f"📄 {r['repo']}/{r['file']}")
+                for m in r["matches"]:
+                    output.append(f"  L{m['line']}: {m['text']}")
+                output.append("")
+            
+            return [TextContent(type="text", text="\n".join(output))]
+        
+        @self.server.call_tool()
+        async def code_read_file(repo: str, file_path: str, start_line: int = None, end_line: int = None) -> list:
+            """קריאת קובץ מקומי"""
+            from mcp.types import TextContent
+            from pathlib import Path as P
+            
+            # Find repo directory
+            target = None
+            for repo_dir in sorted(REPOS_DIR.iterdir()):
+                if repo_dir.is_dir() and repo.lower() in repo_dir.name.lower():
+                    target = repo_dir
+                    break
+            
+            if not target:
+                return [TextContent(type="text", text=f"לא נמצא repo '{repo}'")]
+            
+            full_path = target / file_path
+            if not full_path.exists():
+                return [TextContent(type="text", text=f"קובץ לא נמצא: {file_path}")]
+            
+            try:
+                content = full_path.read_text(encoding="utf-8", errors="ignore")
+                lines = content.split("\n")
+                
+                if start_line or end_line:
+                    start = (start_line or 1) - 1
+                    end = end_line or len(lines)
+                    lines = lines[start:end]
+                    header = f"# {file_path} (שורות {start+1}-{end})\n\n"
+                else:
+                    header = f"# {file_path} ({len(lines)} שורות)\n\n"
+                
+                return [TextContent(type="text", text=header + "\n".join(lines))]
+            except Exception as e:
+                return [TextContent(type="text", text=f"שגיאה בקריאת הקובץ: {e}")]
+        
+        @self.server.call_tool()
+        async def code_list_repos() -> list:
+            """רשימת repos"""
+            from mcp.types import TextContent
+            repos = repo_sync.list_synced_repos()
+            return [TextContent(type="text", text=json.dumps(repos, indent=2, ensure_ascii=False))]
         
         # Register repo index tools
         indexer = RepoIndexer()

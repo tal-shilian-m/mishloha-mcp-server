@@ -14,3 +14,4 @@ name = "mishloha-mcp-server"
 [services.variables]
 PORT = "8000"
 PYTHONUNBUFFERED = "1"
+REPOS_DIR = "/app/repos"
