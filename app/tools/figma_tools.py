@@ -143,3 +143,144 @@ def register_figma_tools(server: Server):
             type="text",
             text=json.dumps(result, indent=2, ensure_ascii=False)
         )]
+
+    @server.call_tool()
+    async def figma_get_variables(file_key: str) -> List[TextContent]:
+        """קבלת כל ה-Design Tokens (משתנים) בקובץ — צבעים, spacing, typography, modes (light/dark)
+        
+        Args:
+            file_key: מזהה הקובץ ב-Figma
+        """
+        endpoint = f"/files/{file_key}/variables/local"
+        
+        result = await figma._make_request("GET", endpoint)
+        
+        return [TextContent(
+            type="text",
+            text=json.dumps(result, indent=2, ensure_ascii=False)
+        )]
+
+    @server.call_tool()
+    async def figma_get_published_variables(file_key: str) -> List[TextContent]:
+        """קבלת משתנים שפורסמו מהקובץ (design tokens משותפים בין קבצים)
+        
+        Args:
+            file_key: מזהה הקובץ ב-Figma
+        """
+        endpoint = f"/files/{file_key}/variables/published"
+        
+        result = await figma._make_request("GET", endpoint)
+        
+        return [TextContent(
+            type="text",
+            text=json.dumps(result, indent=2, ensure_ascii=False)
+        )]
+
+    @server.call_tool()
+    async def figma_get_styles(file_key: str) -> List[TextContent]:
+        """קבלת כל הסגנונות בקובץ — צבעים, טקסט, אפקטים, grids
+        
+        Args:
+            file_key: מזהה הקובץ ב-Figma
+        """
+        endpoint = f"/files/{file_key}/styles"
+        
+        result = await figma._make_request("GET", endpoint)
+        
+        return [TextContent(
+            type="text",
+            text=json.dumps(result, indent=2, ensure_ascii=False)
+        )]
+
+    @server.call_tool()
+    async def figma_get_component_sets(file_key: str) -> List[TextContent]:
+        """קבלת כל ה-Component Sets (variants) בקובץ
+        
+        Args:
+            file_key: מזהה הקובץ ב-Figma
+        """
+        endpoint = f"/files/{file_key}/component_sets"
+        
+        result = await figma._make_request("GET", endpoint)
+        
+        return [TextContent(
+            type="text",
+            text=json.dumps(result, indent=2, ensure_ascii=False)
+        )]
+
+    @server.call_tool()
+    async def figma_get_dev_resources(file_key: str, node_ids: Optional[str] = None) -> List[TextContent]:
+        """קבלת קישורי Dev Resources — חיבורים בין עיצוב לקוד (PR, Storybook, docs)
+        
+        Args:
+            file_key: מזהה הקובץ ב-Figma
+            node_ids: מזהי צמתים ספציפיים (אופציונלי, מופרדים בפסיק)
+        """
+        params = {}
+        if node_ids:
+            params["node_ids"] = node_ids
+        
+        endpoint = f"/files/{file_key}/dev_resources"
+        
+        result = await figma._make_request("GET", endpoint, params=params)
+        
+        return [TextContent(
+            type="text",
+            text=json.dumps(result, indent=2, ensure_ascii=False)
+        )]
+
+    @server.call_tool()
+    async def figma_get_library_analytics(team_id: str) -> List[TextContent]:
+        """ניתוח שימוש בספריית הרכיבים — מי משתמש באיזה component וכמה
+        
+        Args:
+            team_id: מזהה הצוות
+        """
+        endpoint = f"/analytics/libraries/{team_id}/components/usages"
+        
+        result = await figma._make_request("GET", endpoint)
+        
+        return [TextContent(
+            type="text",
+            text=json.dumps(result, indent=2, ensure_ascii=False)
+        )]
+
+    @server.call_tool()
+    async def figma_get_file_versions(file_key: str) -> List[TextContent]:
+        """קבלת היסטוריית גרסאות של קובץ — מי שינה מה ומתי
+        
+        Args:
+            file_key: מזהה הקובץ ב-Figma
+        """
+        endpoint = f"/files/{file_key}/versions"
+        
+        result = await figma._make_request("GET", endpoint)
+        
+        return [TextContent(
+            type="text",
+            text=json.dumps(result, indent=2, ensure_ascii=False)
+        )]
+
+    @server.call_tool()
+    async def figma_get_file_deep(file_key: str, node_id: Optional[str] = None) -> List[TextContent]:
+        """קריאה עמוקה של קובץ עם כל הפרטים — Auto Layout, constraints, fills, effects, typography
+        
+        Args:
+            file_key: מזהה הקובץ ב-Figma
+            node_id: צומת ספציפי (אופציונלי — בלי זה מחזיר הכל)
+        """
+        params = {"geometry": "paths", "plugin_data": "shared"}
+        
+        if node_id:
+            params["ids"] = node_id
+            endpoint = f"/files/{file_key}/nodes"
+        else:
+            params["depth"] = "3"
+            endpoint = f"/files/{file_key}"
+        
+        result = await figma._make_request("GET", endpoint, params=params)
+        
+        return [TextContent(
+            type="text",
+            text=json.dumps(result, indent=2, ensure_ascii=False)
+        )]
